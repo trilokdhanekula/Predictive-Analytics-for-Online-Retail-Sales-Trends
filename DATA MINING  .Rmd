@@ -1,0 +1,842 @@
+---
+title: "DataMiningProject"
+author: "Hemanth Kumar Kottapalli, SriNikitha Desetty, Trilok Dhankekula"
+date: "2024-04-06"
+output: html_document
+---
+
+# Loading dataset
+```{r}
+
+
+library(readxl)
+library(ggplot2)
+library(DataExplorer)
+library(caret)
+
+
+
+dataset_retail <- read_excel("C:/Users/shiva/Downloads/Dataset 13-Online Retail.xlsx")
+str(dataset_retail)
+head(dataset_retail)
+
+```
+# Number of variables and obseravtions in the data set
+```{r}
+observations <- nrow(dataset_retail)  # Calculate the number of observations
+variables <- ncol(dataset_retail)     # Calculate the number of variables
+print(paste("Number of observations:", observations))  # Print the number of observations
+print(paste("Number of variables:", variables))
+
+```
+
+# Data Exploration
+```{r}
+
+dataset_retail$InvoiceNo <- as.factor(dataset_retail$InvoiceNo)     # Convert InvoiceNo to factor
+dataset_retail$StockCode <- as.factor(dataset_retail$StockCode)     # Convert StockCode to factor
+dataset_retail$CustomerID <- as.factor(dataset_retail$CustomerID)   # Convert CustomerID to factor
+dataset_retail$InvoiceDate <- as.Date(dataset_retail$InvoiceDate, format = "%m/%d/%y")  # Convert InvoiceDate to Date format
+str(dataset_retail)  # Display the structure of the modified dataset
+```
+
+# Install and load the stringr package for string manipulation
+```{r}
+
+# install.packages("stringr")
+library(stringr)
+
+# Change description to title case using str_to_title() function from stringr package
+dataset_retail$Description <- str_to_title(dataset_retail$Description)
+
+# Replace "United Kingdom" with "UK" in the Country column using ifelse() function
+# if the value in the Country column is "United Kingdom", replace it with "UK", otherwise keep the original value
+dataset_retail$Country <- ifelse(dataset_retail$Country == "United Kingdom", "UK", dataset_retail$Country)
+
+# Display the first few rows of the dataset
+head(dataset_retail)
+
+```
+
+## Handling Missing Values
+```{r}
+
+# Calculate the total number of missing observations in the dataset
+missing_values <- sum(is.na(dataset_retail))
+cat("Missing Observations are", missing_values)
+
+# Create Data Frame for Missing Values
+Variables = c("InvoiceNo", "StockCode", "Description", "Quantity", "InvoiceDate", "UnitPrice", "CustomerID", "Country")
+NA_Count=c(sum(is.na(dataset_retail$InvoiceNo)),sum(is.na(dataset_retail$StockCode)),sum(is.na(dataset_retail$Description)),sum(is.na(dataset_retail$Quantity)),sum(is.na(dataset_retail$InvoiceDate)),sum(is.na(dataset_retail$UnitPrice)),sum(is.na(dataset_retail$CustomerID)),sum(is.na(dataset_retail$Country)))
+df_missing_values <- data.frame(Variables,NA_Count)
+df_missing_values
+```
+
+
+```{r}
+
+# Remove rows with missing values and create a new dataset
+dataset_update <- na.omit(dataset_retail)
+
+# Calculate the total number of missing values in the updated dataset
+sum_missing <- sum(is.na(dataset_update))
+
+# Display the total number of missing values
+print(paste("Total number of missing values after removal:", sum_missing))
+
+# Display the dimensions of the updated dataset
+print(paste("Dimensions of the updated dataset:", dim(dataset_update)))
+
+
+```
+
+Following the removal of null observations, the dataset now comprises 406,829 entries across 8 variables. Further exploration using visualization methods can help identify potential outliers.
+
+## Visualization
+
+
+```{r}
+# Create a boxplot for the 'UnitPrice' variable in the updated dataset
+boxplot_Price <- boxplot(dataset_update$UnitPrice,
+                          main = "Price Box Plot",
+                          ylab = "Unit Price",
+                          notch = TRUE)
+```
+
+The UnitPrice boxplot reveals an extremely high outlier, indicating a potential source of bias in the mean and median values of the data. Omitting this outlier is essential to prevent skewed results and ensure the accuracy of statistical measures.
+
+
+```{r}
+
+# Create a boxplot for the 'Quantity' variable in the updated dataset
+boxplot_Quantity <- boxplot(dataset_update$Quantity,
+                             main = "Quantity Box Plot",
+                             ylab = "Sales",
+                             notch = FALSE)
+
+```
+
+The Quantity boxplot highlights outliers significantly exceeding the median value, indicating potential data entry errors or bulk purchases. The skewed distribution suggests most orders consist of smaller quantities. Addressing these outliers through data transformation or cleaning is crucial for accurate predictive analysis, ensuring more reliable models devoid of biases.
+
+
+
+```{r}
+
+# Calculate the frequency of each country in the updated dataset
+frequency <- table(dataset_update$Country)
+frequency <- sort(frequency, decreasing = TRUE)
+
+# Select the top 5 countries with the highest frequencies
+top_frequency <- head(frequency, 5)
+
+# Create a bar plot to visualize the frequency of the top 5 countries
+barplot(top_frequency,
+        main = "Country Box Plot",
+        xlab = "Frequency",
+        ylab = "Country",
+        las = 1,
+        col = "green")
+
+
+```
+The bar plot illustrates the frequency of buyers across various countries, with the number of frequent buyers depicted on the x-axis and participating countries on the y-axis. Notably, the United Kingdom, the location of the store with a substantial presence, has been excluded to prevent biased results. Among the remaining countries, Germany emerges as the second-highest in terms of buyer frequency, closely followed by france and EIRE This visualization offers insights into the distribution of buyers across different regions, highlighting significant markets beyond the UK.
+
+
+## calculate and filter the data based on the "Quantity" variable and use the interquartile range (IQR) method to identify and remove outliers.
+
+```{r}
+
+dataset_update$Sales <- dataset_update$UnitPrice * dataset_update$Quantity
+# Display dimensions after calculating total sales
+dim(dataset_update)
+
+library(dplyr)
+# Calculate the interquartile range (IQR) for Quantity
+Sales_IQR <- IQR(dataset_update$Sales, na.rm = TRUE)
+
+# Calculate the first quartile (Q1) and third quartile (Q3) for Quantity
+Sales_Q1 <- quantile(dataset_update$Sales, 0.25, na.rm = TRUE)
+Sales_Q3 <- quantile(dataset_update$Sales, 0.75, na.rm = TRUE)
+
+# Calculate the lower and upper bounds for outliers
+Sales_LB <- Sales_Q1 - 3 * Sales_IQR
+Sales_UB <- Sales_Q3 + 3 * Sales_IQR
+
+# Filter the dataset to include only observations where Quantity falls within the calculated bounds
+filter_dataset <- dataset_update[dataset_update$Sales >= Sales_LB & dataset_update$Sales <= Sales_UB,]
+# Display dimensions after filtering by sales bounds
+dim(filter_dataset)
+
+# Filter the dataset to exclude observations where UnitPrice is less than or equal to 0.01
+filter_dataset <- filter_dataset %>% filter(UnitPrice >= 0.01)
+# Display dimensions after further filtering by unit price
+dim(filter_dataset)
+
+```
+
+This code snippet first calculates the total sales by multiplying the unit price and quantity columns and then filters the dataset to include only observations where the total sales fall within a specified range. Finally, it further filters the dataset to exclude observations where the unit price is less than or equal to 0.01, ensuring data integrity for subsequent analyses.
+
+```{r}
+# Creates a new variable 'UKCountryGroup' based on 'Country', labeling 'UK' or 'Other'.
+
+filter_dataset$UKCountryGroup <- ifelse(filter_dataset$Country == "UK", "UK", "Other")
+
+# Defines a function to determine seasons from dates: Spring, Summer, Fall, Winter.
+func_season <- function(date) {
+  month <- as.numeric(format(date, "%m"))
+  if (month %in% 3:5) {
+    return("Spring")
+  } else if (month %in% 6:8) {
+    return("Summer")
+  } else if (month %in% 9:11) {
+    return("Fall")
+  } else {
+    return("Winter")
+  }
+}
+# Applies 'func_season' to create 'Season' column based on 'InvoiceDate'.
+filter_dataset$Season <- sapply(filter_dataset$InvoiceDate, func_season)
+
+table(filter_dataset$Season)
+
+```
+Creates 'UKCountryGroup' variable based on 'Country', classifying 'UK' or 'Other', and assigns seasons to 'InvoiceDate' observations, generating 'Season' column.
+```{r}
+# Display dimensions of the filtered dataset
+dim(filter_dataset)
+
+# Calculate the number of observations and variables in the filtered dataset
+no_of_observations <- nrow(filter_dataset)
+no_of_variables <- ncol(filter_dataset)
+
+# Print the number of observations and variables
+cat("There are ", no_of_observations,"observations and ", no_of_variables, "variables in the dataset after handling outliers")
+```
+
+
+```{r}
+filter_dataset$InvoiceDummy <- ifelse(substr(filter_dataset$InvoiceNo, 1, 1) == 'C', 1, 0)
+
+table(filter_dataset$InvoiceDummy)
+```
+Creates a new binary variable 'InvoiceDummy' indicating whether the invoice starts with 'C' (1 for True, 0 for False), and then displays the frequency table of 'InvoiceDummy'.
+
+
+```{r}
+## Dividing the dataset into Retail Sales and Retail return sales
+online_sales <- filter_dataset %>% filter(InvoiceDummy == 0)
+
+head(online_sales)
+```
+
+```{r}
+
+# Retail return sales
+online_return <- filter_dataset %>%filter(InvoiceDummy == 1)
+
+head(online_return)
+```
+```{r}
+nooutliers_Quantity_Boxplot <- boxplot(online_sales$Quantity,main="Quantity BoxPlot", ylab="Sales",col="green",notch=FALSE)
+```
+```{r}
+Price_boxplot_nooutliers <- boxplot(online_sales$UnitPrice,main = "Unit Price BoxPlot",ylab = "Unit Price",col = "blue",notch = TRUE)
+```
+
+```{r}
+online_sales$Log_Sales <- log(online_sales$Sales)  # Compute the natural logarithm of 'Quantity' and store it in 'Log_Sales'
+online_sales$Log_UnitPrice <- log(online_sales$UnitPrice)  # Compute the natural logarithm of 'UnitPrice' and store it in 'Log_UnitPrice'
+
+# Display the first few rows of the dataset with logarithmically transformed sales and unit price
+head(online_sales)
+
+
+```
+
+```{r}
+boxplot_sales_nooutliers <- boxplot(online_sales$Log_Sales,
+main = "use of log transformation for Quantity Box Plot",ylab = "Sales",col = "red",notch = TRUE)
+```
+```{r}
+boxplot_UnitPrice_nooutliers <- boxplot(online_sales$Log_UnitPrice,main = "use of log transformation for UnitPrice Box Plot",ylab = "Unit Price",col = "blue",notch = TRUE)
+```
+
+```{r}
+# Calculate the frequency of each country in the online_sales dataset
+frequency_country <- table(online_sales$Country)
+
+# Sort the frequencies in decreasing order
+frequency_country <- sort(frequency_country, decreasing = TRUE)
+
+# Select the top 5 countries with the highest frequencies
+top_country_frequency <- head(frequency_country, 5)
+
+# Create a horizontal bar plot to visualize the frequency of the top 5 countries
+barplot(top_country_frequency,
+  main = "Bar Plot of Country (After handling outliers)",
+  xlab = "Frequency",
+  ylab = "Country",
+  horiz = TRUE,  # Horizontal orientation
+  las = 1,       # Rotate labels perpendicular to the axis
+  cex.names = 0.8,  # Adjust the size of the country names
+  col = "purple"  # Color of the bars
+)
+```
+
+```{r}
+
+# Aggregate total quantities by invoice number
+total_invoice_numbers <- aggregate(Quantity ~ InvoiceNo, data = online_sales, FUN = sum)
+
+# Sort invoices by total quantity in descending order
+total_invoice_numbers <- total_invoice_numbers[order(-total_invoice_numbers$Quantity), ]
+
+# Select the top 30 invoices for visualization
+no_of_invoices <- 30
+top_invoices <- head(total_invoice_numbers, no_of_invoices)
+
+
+# Assuming top_invoices is correctly prepared
+ggplot(top_invoices, aes(x = reorder(InvoiceNo, Quantity), y = Quantity)) +
+  geom_bar(stat = "identity", fill = "green") +
+  theme_minimal() +
+  labs(title = "Top Invoices by Quantity",
+       x = "Invoice No",
+       y = "Quantity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+```{r}
+
+# Aggregate total quantities by customer ID
+customer_total_quantity <- aggregate(Quantity ~ CustomerID, data = online_sales, FUN = sum)
+
+# Sort customers by total quantity in descending order
+customer_total_quantity <- customer_total_quantity[order(-customer_total_quantity$Quantity), ]
+
+# Select the top 20 customers for visualization
+no_of_customers <- 20
+top_20 <- head(customer_total_quantity, no_of_customers)
+
+# Create a bar chart to display top customers by quantity
+ggplot(top_20, aes(x = reorder(as.factor(CustomerID), Quantity), y = Quantity)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  theme_minimal() +
+  labs(title = paste("Top 20 Customers Quantity by Customer ID"),
+       x = "Customer ID",
+       y = "Total Quantity") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+```{r}
+
+# Calculate total sales returns by customer
+returns_sale <- online_return %>%group_by(CustomerID) %>%summarise(Sales = sum(Sales)) %>%arrange(Sales)
+
+# Select the top 10 customers with the highest sales returns
+top_returns <- head(returns_sale, 10)
+
+
+# Create a bar plot to visualize total sales returns by customer
+ggplot(top_returns, aes(x = reorder(CustomerID, -Sales), y = Sales, fill = Sales)) +
+  geom_bar(stat = "identity") +coord_flip() +scale_fill_gradient(low = "orange", high = "grey") +labs(title = "Total Sales Returns by Customer",subtitle = "Negative values represent the amount returned",x = "Customer ID",y = "Total Sales Returns") +theme_minimal() +geom_text(aes(label = Sales), hjust = -0.1, size = 3) + theme(axis.text.y = element_text(angle = 0))
+
+
+
+
+```
+```{r}
+
+# Load the 'lubridate' package
+library(lubridate)
+
+# Extract the day of the week from the InvoiceDate column and store it in a new column
+filter_dataset$DayOfWeek <- wday(filter_dataset$InvoiceDate, label = TRUE, abbr = FALSE)
+
+# Aggregate sales by day of the week
+sales_pattern <- filter_dataset %>%
+  group_by(DayOfWeek) %>%
+  summarize(Sales = sum(Sales, na.rm = TRUE)) %>%
+  mutate(DayOfWeek = factor(DayOfWeek, levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")))
+
+# Create a bar plot to visualize the sales pattern per day of the week
+ggplot(sales_pattern, aes(x = DayOfWeek, y = Sales, fill = DayOfWeek)) +
+  geom_col() +
+  labs(title = "Weekly Sales Pattern",
+       x = "Day",
+       y = "Sales") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+
+# Aggregate total sales by customer ID
+summary_of_customer <- aggregate(Sales ~ CustomerID, data = online_sales, FUN = sum)
+
+# Create a correlation matrix with selected variables from the filtered dataset
+corr_matrix <- online_sales[, c('UnitPrice', 'Quantity', 'Sales')]
+
+# Calculate the correlation matrix
+corr_matrix_unitPrice_Quantity <- cor(corr_matrix)
+
+# Display the correlation matrix as a table
+knitr::kable(corr_matrix_unitPrice_Quantity)
+```
+```{r}
+
+# Load required libraries
+library(dplyr)
+library(tidyr)
+
+# Group data by product description and calculate total sales for each product
+pivot_sales <- online_sales %>%group_by(Description) %>%summarise(Sales = sum(Sales, na.rm = TRUE)) %>%
+  ungroup() %>%arrange(desc(Sales))
+
+# Display the top rows of the pivot_sales dataset
+head(pivot_sales)
+
+
+```
+
+```{r}
+# Group data by country and calculate total sales for each country
+pivot_country <- online_sales %>%group_by(Country) %>%
+  summarise(Sales = sum(Sales, na.rm = TRUE)) %>%ungroup() %>%arrange(desc(Sales))
+
+# Print the pivot_country dataset
+print(pivot_country)
+
+```
+
+```{r}
+
+# Aggregate total sales by country
+total_sales_by_country <- aggregate(Sales ~ Country, data = online_sales, sum)
+
+# Order countries by total sales in descending order
+total_sales_by_country <- total_sales_by_country[order(-total_sales_by_country$Sales), ]
+
+# Select the top 5 countries by sales
+top_5<- head(total_sales_by_country, 5)
+
+# Create a bar plot for the top 5 countries
+barplot(
+  top_5$Sales,names.arg = top_5$Country,
+  las = 2,
+  main = "Top 5 Countries Sales",
+  col = "green",
+  cex.names = 0.7,
+  ylim = c(0, max(top_5$Sales) * 1.1)
+)
+
+```
+
+
+```{r}
+
+# Calculate the frequency of the dependent variable
+frequency_sales <- table(online_sales$Sales)
+
+# Display the first few entries of the frequency table
+head(frequency_sales)
+```
+
+```{r}
+
+# Create a bar plot to visualize the frequency distribution of sales
+barplot(frequency_sales,
+        main = "Distribution of Sales",
+        xlab = "Sales",
+        ylab = "Frequency")
+```
+
+
+
+```{r}
+
+# Calculate the median of total sales
+total_sales_median <- median(online_sales$Sales, na.rm = TRUE)
+
+# Create a new column 'TopSale' based on whether the total sales are above or below the median
+online_sales$TopSale <- ifelse(online_sales$Sales > total_sales_median, '0', '1')
+
+# Display the frequency of each category in the 'TopSale' column
+table(online_sales$TopSale)
+
+```
+
+```{r}
+
+# Calculate the 75th percentile of Quantity and 25th percentile of UnitPrice
+percentile_75forQuantity <- quantile(online_sales$Quantity, 0.75)
+percentile_25forUnitPrice <- quantile(online_sales$UnitPrice, 0.25)
+
+# Create a new column 'Segments' based on the conditions
+online_sales$Segments <- with(online_sales, ifelse(Quantity >= percentile_75forQuantity & UnitPrice <= percentile_25forUnitPrice, 'High_Quantity',ifelse(Quantity < percentile_75forQuantity & UnitPrice > percentile_25forUnitPrice, 'Low_Quantity', 'Other')))
+
+High_Quantity_Low_Price_set <- subset(online_sales, Segments == 'High_Quantity')
+Low_Quantity_High_Price_set <- subset(online_sales, Segments == 'Low_Quantity')
+
+# Descriptive statistics
+summary(High_Quantity_Low_Price_set)
+summary(Low_Quantity_High_Price_set)
+
+# Visualization
+# Scatter plot for High Quantity and Low Price
+plot(High_Quantity_Low_Price_set$Quantity, High_Quantity_Low_Price_set$UnitPrice, main="High Quantity and Low Price", xlab="Quantity", ylab="Unit Price", col="orange")
+
+# Scatter plot for Low Quantity and High Price
+plot(Low_Quantity_High_Price_set$Quantity, Low_Quantity_High_Price_set$UnitPrice, main="Low Quantity and High Price", xlab="Quantity", ylab="Unit Price", col="green")
+
+# Assuming 'Segments' is a variable in your 'online_sales' dataset
+sales_pattern_segment <- online_sales %>%
+  group_by(Segments) %>%
+  summarise(Sales = sum(Sales))
+
+# Print the table
+print(sales_pattern_segment)
+
+```
+
+```{r}
+
+# Calculate correlation between Quantity and UnitPrice for High Quantity, Low Price segment
+correlation_High_Quantity_Low_Price <- cor(High_Quantity_Low_Price_set$Quantity, High_Quantity_Low_Price_set$UnitPrice)
+
+# Calculate correlation between Quantity and UnitPrice for Low Quantity, High Price segment
+correlation_Low_Quantity_High_Price <- cor(Low_Quantity_High_Price_set$Quantity, Low_Quantity_High_Price_set$UnitPrice)
+
+# Print correlation results
+print(correlation_High_Quantity_Low_Price)
+print(correlation_Low_Quantity_High_Price)
+
+# Perform linear regression for High Quantity, Low Price segment
+model_High_Quantity_Low_Price <- lm(UnitPrice ~ Quantity, data = High_Quantity_Low_Price_set)
+
+# Perform linear regression for Low Quantity, High Price segment
+model_Low_Quantity_High_Price <- lm(UnitPrice ~ Quantity, data = Low_Quantity_High_Price_set)
+
+# Summarize regression results for High Quantity, Low Price segment
+summary(model_High_Quantity_Low_Price)
+
+# Summarize regression results for Low Quantity, High Price segment
+summary(model_Low_Quantity_High_Price)
+
+
+```
+
+
+
+```{r}
+
+
+# Load the caret package
+library(caret)
+library(lattice)
+
+# Set the random seed for reproducibility
+set.seed(123)
+
+# Sample 60% of the data for training
+no_of_obs_train <- sample(rownames(online_sales), dim(online_sales)[1] * 0.6)
+train_data <- online_sales[no_of_obs_train, ]
+
+# Select the remaining data for validation
+no_of_obs_test <- setdiff(rownames(online_sales), no_of_obs_train)
+test_data <- online_sales[no_of_obs_test, ]
+
+# Print the dimensions of the training and validation sets
+dim(train_data)
+dim(test_data)
+
+```
+
+
+
+
+```{r}
+
+library(dplyr)
+# Calculate order frequency for each customer
+order_frequency_customers <- online_sales %>%group_by(CustomerID) %>%
+  summarize(OrderFrequency = n_distinct(InvoiceNo))
+
+# Determine quantiles for order frequency
+quantiles_order <- quantile(order_frequency_customers$OrderFrequency, probs = c(0.25, 0.75))
+
+# Categorize customers based on order frequency
+order_frequency_customers$Frequency.customer <- cut(order_frequency_customers$OrderFrequency,
+                                          breaks = c(-Inf, quantiles_order, Inf),
+                                          labels = c("Rare", "Moderate", "Frequent"),
+                                          include.lowest = TRUE)
+
+# Merge customer frequency information into the main dataset
+online_sales <- merge(online_sales, order_frequency_customers, by = "CustomerID")
+
+
+```
+
+
+
+
+```{r}
+
+names(train_data)
+
+# Use only selected predictors based on domain knowledge or prior analysis
+mlr_model <- lm(Log_Sales ~ Season + UKCountryGroup, data = train_data)
+summary(mlr_model)
+
+
+
+```
+
+
+
+# Multiple Linear regression with all predictors (ID's excluded)
+
+
+```{r}
+## Load necessary libraries
+library(caret)
+
+# Assuming train_data and test_data are already loaded and contain the appropriate columns
+
+# Set the random seed for reproducibility
+set.seed(123)
+
+# Defining the model excluding identified arbitrary variables
+model_formula <- Log_Sales ~ Quantity + InvoiceDate  + Country + 
+                 UKCountryGroup + Season + InvoiceDummy + Log_UnitPrice + TopSale 
+
+# Fit the model on the training data
+model <- lm(model_formula, data = train_data)
+
+# Summary of the model to view coefficients and statistics
+summary(model)
+
+# Testing the model on the test set
+test_predictions <- predict(model, newdata = test_data)
+
+# Comparing actual values vs predicted values
+results <- data.frame(Actual = test_data$Log_Sales, Predicted = test_predictions)
+
+# Calculate RMSE to evaluate the model
+rmse <- sqrt(mean((results$Actual - results$Predicted)^2))
+rmse
+
+# Displaying the RMSE
+print(rmse)
+
+```
+
+```{r}
+## Load necessary libraries
+library(caret)
+
+# Assuming train_data and test_data are already loaded and contain the appropriate columns
+
+# Set the random seed for reproducibility
+set.seed(123)
+
+# Defining the model excluding identified arbitrary variables
+model_formula2 <- Log_Sales ~   UKCountryGroup + Season + Log_UnitPrice+TopSale 
+
+# Fit the model on the training data
+model2 <- lm(model_formula2, data = train_data)
+
+# Summary of the model to view coefficients and statistics
+summary(model2)
+
+# Testing the model on the test set
+test_predictions2 <- predict(model2, newdata = test_data)
+
+# Comparing actual values vs predicted values
+results2 <- data.frame(Actual = test_data$Log_Sales, Predicted = test_predictions2)
+
+# Calculate RMSE to evaluate the model
+rmse2 <- sqrt(mean((results$Actual - results2$Predicted)^2))
+rmse2
+
+# Displaying the RMSE
+print(rmse2)
+```
+
+
+
+
+
+
+
+
+
+
+# Decision Tree model
+
+
+```{r}
+
+library(rpart.plot)
+library(rpart)
+
+# Set the random seed for reproducibility
+set.seed(123)
+
+# Defining the target variable and predictors
+# Define the model formula
+# Define the model formula
+model_formula <- Log_Sales ~   UKCountryGroup + Season + Log_UnitPrice+TopSale
+
+# Fit the decision tree model on the training data
+dt_model <- rpart(model_formula, data = train_data, method = "anova")
+
+# Plot the decision tree (optional)
+rpart.plot(dt_model, main = "Decision Tree for Log_Sales")
+
+
+
+```
+
+
+
+
+```{r}
+# Predict on the test data for a regression tree
+predictions <- predict(dt_model, newdata = test_data)
+
+# Actual values from the test data (assuming 'Log_Sales' is your target variable)
+actual_values <- test_data$Log_Sales
+
+# Calculate RMSE to evaluate the model
+rmse <- sqrt(mean((predictions - actual_values)^2))
+
+# Print RMSE
+print(rmse)
+
+
+```
+
+
+
+
+```{r}
+
+# Assuming train_data and test_data are loaded and model formulas are correctly defined
+# Fit the Linear Regression Model
+lm_model <- lm(Log_Sales ~ Quantity + InvoiceDate + UnitPrice + Country + Sales + 
+               UKCountryGroup + Season + InvoiceDummy + Log_UnitPrice + TopSale + Segments, 
+               data = train_data)
+# Predict with Linear Regression Model
+lm_predictions <- predict(lm_model, newdata = test_data)
+
+# Fit the Decision Tree Model
+dt_model <- rpart(Log_Sales ~ Quantity + InvoiceDate + UnitPrice + Country + Sales +
+                  UKCountryGroup + Season + InvoiceDummy + Log_UnitPrice + TopSale + Segments, 
+                  data = train_data, method = "anova")
+# Predict with Decision Tree Model
+dt_predictions <- predict(dt_model, newdata = test_data)
+
+# Calculate RMSE for Linear Regression Model
+lm_rmse <- sqrt(mean((test_data$Log_Sales - lm_predictions)^2))
+print(paste("RMSE for Multiple Linear Regression Model:", lm_rmse))
+
+# Calculate RMSE for Decision Tree Model
+dt_rmse <- sqrt(mean((test_data$Log_Sales - dt_predictions)^2))
+print(paste("RMSE for Decision Tree Model:", dt_rmse))
+
+```
+
+
+
+
+
+
+```{r}
+library(caret)
+library(rpart.plot)
+
+# Set the random seed for reproducibility
+set.seed(123)
+
+# Ensure train_data is a dataframe and inspect first few rows
+if (!is.data.frame(train_data)) {
+  stop("train_data needs to be a dataframe")
+}
+print(head(train_data))
+
+# Correct the model formula
+model_formula <- Log_Sales ~   UKCountryGroup + Season + Log_UnitPrice+TopSale
+
+# Define the control function for training with cross-validation
+fitControl <- trainControl(
+  method = "cv",
+  number = 10,
+  savePredictions = "final",
+  returnResamp = "all",
+  verboseIter = TRUE
+)
+
+# Train the model
+dt_model_cv <- train(model_formula, data = train_data, method = "rpart",
+                     trControl = fitControl,
+                     tuneLength = 10)
+
+# Plot the best tree
+rpart.plot(dt_model_cv$finalModel, main = "Optimized Decision Tree for Log_Sales")
+
+# Predict on the test data
+test_predictions <- predict(dt_model_cv, newdata = test_data)
+
+# Calculate RMSE for test data
+test_rmse <- sqrt(mean((test_data$Log_Sales - test_predictions)^2))
+print(paste("Test RMSE:", test_rmse))
+
+
+```
+
+
+Model: Random Forest Model
+
+```{r, warning = FALSE, message = FALSE}
+## Running Random Forest model
+
+
+library(randomForest)
+
+set.seed(123)
+sales_rf1 <- randomForest(Log_Sales ~   UKCountryGroup + Season + Log_UnitPrice+TopSale, data = train_data, ntree = 500, importance = TRUE)
+
+print(sales_rf1)
+
+```
+
+
+
+
+
+```{r}
+rf_prediction1 <- predict(sales_rf1, newdata = test_data)
+
+# Calculating RMSE
+rmse3 <- sqrt(mean((rf_prediction1 - test_data$Log_Sales)^2))
+
+# Printing the RMSE
+print(rmse3)
+
+rf_prediction2 <- predict(sales_rf1, newdata = test_data)
+
+# Calculating RMSE
+rmse4 <- sqrt(mean((rf_prediction2 - test_data$Log_Sales)^2))
+
+# Printing the RMSE
+print(rmse4)
+
+```
+
+
+
